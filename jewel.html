@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>보석 맞추기</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <style>
   :root { --bg1:#1d1838; --bg2:#06050c; --panel:#15122a; --accent:#ffcf4a; --text:#f1eefc; --muted:#a9a3c9; }
   * { box-sizing: border-box; }
@@ -32,6 +33,14 @@
              gap: 12px; background: #000c; border-radius: 14px; text-align: center; }
   .overlay.show { display: flex; }
   .overlay h2 { margin: 0; font-size: 32px; color: var(--accent); }
+  .userbar { display: none; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+  .userbar.show { display: flex; }
+  .userbar b { color: var(--text); }
+  .userbar button { padding: 4px 12px; font-size: 13px; }
+  .overlay.login { background: #000000e6; }
+  .kakao { background: #fee500; color: #191919; display: flex; align-items: center; gap: 8px; padding: 12px 22px; font-size: 16px; }
+  .kakao:hover { background: #f5dc00; }
+  .err { color: #ff8a8a; font-size: 13px; max-width: 90%; min-height: 1em; }
   .help { color: var(--muted); font-size: 13px; margin: 0; text-align: center; }
 </style>
 </head>
@@ -42,8 +51,18 @@
   <div class="box"><small>남은 이동</small><b id="moves">30</b></div>
   <div class="box"><small>최고 점수</small><b id="best">0</b></div>
 </div>
+<div class="userbar" id="userbar"><span><b id="nick"></b> 님 환영합니다</span><button id="logout">로그아웃</button></div>
 <div class="wrap">
   <canvas id="board"></canvas>
+  <div class="overlay login show" id="login">
+    <h2>💎 보석 맞추기</h2>
+    <div>카카오 계정으로 로그인하면 게임을 시작할 수 있어요.</div>
+    <button class="kakao" id="kakaoLogin">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="#191919" d="M12 3C6.48 3 2 6.58 2 11c0 2.85 1.86 5.35 4.66 6.77l-.95 3.5c-.08.3.26.54.52.37l4.17-2.77c.53.07 1.06.11 1.6.11 5.52 0 10-3.58 10-8S17.52 3 12 3z"/></svg>
+      카카오 로그인
+    </button>
+    <div class="err" id="loginErr"></div>
+  </div>
   <div class="overlay" id="over">
     <h2>게임 종료!</h2>
     <div id="final"></div>
@@ -260,7 +279,7 @@ function cellAt(e) {
 const adjacent = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1;
 
 cv.addEventListener('pointerdown', e => {
-  if (busy || moves <= 0) return;
+  if (!user || busy || moves <= 0) return;
   const p = cellAt(e);
   if (p.r < 0 || p.r >= N || p.c < 0 || p.c >= N) return;
   down = p; cv.setPointerCapture(e.pointerId);
@@ -281,10 +300,10 @@ cv.addEventListener('pointerup', () => {
 });
 
 document.getElementById('hint').onclick = () => {
-  if (busy) return;
+  if (!user || busy) return;
   hint = findMove(); hintTime = 0;
 };
-document.getElementById('newgame').onclick = () => { if (!busy) startGame(); };
+document.getElementById('newgame').onclick = () => { if (user && !busy) startGame(); };
 document.getElementById('again').onclick = startGame;
 
 // ---------- 그리기 루프 ----------
@@ -346,7 +365,57 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 
-startGame();
+// ---------- Supabase 카카오 로그인 ----------
+const SUPABASE_URL = 'https://qmbmkcjwtbfzuypjzqqk.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_fiHMf2mtKzwehtIExN_zOg_hCY-AR8c'; // 공개용(publishable) 키
+let user = null, sb = null;
+const loginErr = document.getElementById('loginErr');
+
+function setUser(u) {
+  const was = user;
+  user = u;
+  document.getElementById('login').classList.toggle('show', !u);
+  document.getElementById('userbar').classList.toggle('show', !!u);
+  if (u) {
+    const m = u.user_metadata || {};
+    document.getElementById('nick').textContent = m.name || m.full_name || m.preferred_username || m.user_name || u.email || '플레이어';
+    if (!was) startGame();
+  }
+}
+
+if (window.supabase) {
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  sb.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null));
+  sb.auth.getSession().then(({ data }) => {
+    setUser(data.session?.user ?? null);
+    // 로그인 후 주소창의 ?code= 등을 정리
+    if (location.search || location.hash) history.replaceState(null, '', location.pathname);
+  });
+  const params = new URLSearchParams(location.search + '&' + location.hash.slice(1));
+  if (params.get('error_description')) loginErr.textContent = '로그인 실패: ' + params.get('error_description');
+} else {
+  loginErr.textContent = 'Supabase 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.';
+}
+
+document.getElementById('kakaoLogin').onclick = async () => {
+  if (!sb) return;
+  if (location.protocol === 'file:') {
+    loginErr.textContent = '파일을 직접 열면 로그인할 수 없어요. 배포된 주소(https://...)에서 실행하세요.';
+    return;
+  }
+  loginErr.textContent = '';
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'kakao',
+    options: { redirectTo: location.origin + location.pathname },
+  });
+  if (error) loginErr.textContent = '로그인 실패: ' + error.message;
+};
+document.getElementById('logout').onclick = async () => {
+  await sb.auth.signOut();
+  setUser(null);
+};
+
+newBoard();  // 로그인 화면 뒤에 보일 보드
 requestAnimationFrame(frame);
 </script>
 </body>

@@ -4,3 +4,7 @@ dist/
 .env.local
 .env.*.local
 .vercel/
+
+# Local tooling and private project notes
+.claude/
+pnumin's Project.txt
