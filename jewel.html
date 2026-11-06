@@ -54,7 +54,7 @@
   <button id="hint">💡 힌트</button>
   <button class="main" id="newgame">새 게임</button>
 </div>
-<p class="help">이웃한 보석을 클릭하거나 드래그해서 바꾸세요. 같은 보석 3개 이상을 한 줄로 맞추거나 2×2 사각형으로 모으면 사라집니다.<br>연쇄(콤보)가 일어나면 점수가 배로 올라갑니다!</p>
+<p class="help">이웃한 보석을 클릭하거나 드래그해서 바꾸세요. 같은 보석 3개 이상을 한 줄로 맞추면 사라집니다.<br>연쇄(콤보)가 일어나면 점수가 배로 올라갑니다!</p>
 
 <script>
 const N = 8, S = 64, TYPES = 6, MAX_MOVES = 30;
@@ -128,8 +128,7 @@ function newBoard() {
         let t;
         do { t = rnd(TYPES); } while (
           (c >= 2 && grid[r][c - 1].t === t && grid[r][c - 2].t === t) ||
-          (r >= 2 && grid[r - 1][c].t === t && grid[r - 2][c].t === t) ||
-          (r >= 1 && c >= 1 && grid[r - 1][c].t === t && grid[r][c - 1].t === t && grid[r - 1][c - 1].t === t));
+          (r >= 2 && grid[r - 1][c].t === t && grid[r - 2][c].t === t));
         grid[r].push(gem(t, c, r - N - 1)); // 위에서 떨어지며 등장
       }
     }
@@ -146,11 +145,6 @@ function findMatches() {
     }
     if (r <= N - 3 && grid[r + 1][c]?.t === t && grid[r + 2][c]?.t === t) {
       let e = r; while (e < N && grid[e][c]?.t === t) set.add(e++ + ',' + c);
-    }
-    // 2x2 사각형
-    if (r <= N - 2 && c <= N - 2 && grid[r][c + 1]?.t === t && grid[r + 1][c]?.t === t && grid[r + 1][c + 1]?.t === t) {
-      set.squares = (set.squares || 0) + 1;
-      set.add(r + ',' + c); set.add(r + ',' + (c + 1)); set.add((r + 1) + ',' + c); set.add((r + 1) + ',' + (c + 1));
     }
   }
   return set;
@@ -192,8 +186,7 @@ async function resolveBoard() {
     const m = findMatches();
     if (!m.size) break;
     combo++;
-    const sq = m.squares || 0;
-    const pts = m.size * 10 * combo + (m.size >= 4 ? (m.size - 3) * 30 : 0) + sq * 50;
+    const pts = m.size * 10 * combo + (m.size >= 4 ? (m.size - 3) * 30 : 0);
     score += pts; updateHud();
     let sx = 0, sy = 0;
     for (const k of m) {
@@ -204,7 +197,7 @@ async function resolveBoard() {
         particles.push({ x: c * S + S / 2, y: r * S + S / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.6, h: HUES[g.t] });
       }
     }
-    popups.push({ x: (sx / m.size) * S + S / 2, y: (sy / m.size) * S + S / 2, text: (sq ? '사각형! ' : '') + '+' + pts + (combo > 1 ? `  x${combo} 콤보!` : ''), life: 1 });
+    popups.push({ x: (sx / m.size) * S + S / 2, y: (sy / m.size) * S + S / 2, text: '+' + pts + (combo > 1 ? `  x${combo} 콤보!` : ''), life: 1 });
     await wait(230);
     for (const k of m) { const [r, c] = k.split(',').map(Number); grid[r][c] = null; }
     // 중력 + 새 보석 채우기
